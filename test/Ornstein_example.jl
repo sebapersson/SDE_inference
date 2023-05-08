@@ -143,15 +143,11 @@ p3 = density(samples[3, burn_in:end])
 p3 = vline!([-0.9])
 
 
-#=
+# Solving SDE model 
+data_obs = CSV.read(joinpath(@__DIR__, "Ornstein_model", "Simulated_data.csv"), DataFrame)
+mod_param = DynModInput(exp.([0.1, 2.3, -0.9]), Float64[], Float64[])
 dt=1e-2
-filter_opt = BootstrapFilterEM(dt, 40, correlation=0.99)
-filter_cache = create_cache(filter_opt, Val(sde_mod.dim_obs), Val(sde_mod.dim), Val(1), sde_mod.P_mat)
-path_data = joinpath(@__DIR__, "Ornstein_model", "Simulated_data.csv")
-ind_data = init_ind_data(CSV.read(path_data, DataFrame), filter_opt)
-mod_param = ModelParameters(DynModInput(exp.([0.1, 2.3, -0.9]), Float64[], Float64[]), Float64[], [0.3], Float64[])
-random_numbers = create_rand_num(ind_data, sde_mod, filter_opt)
-log_lik = run_filter(filter_opt, mod_param, random_numbers, filter_cache, sde_mod, ind_data, Val(filter_opt.is_correlated))
-@allocated log_lik = run_filter(filter_opt, mod_param, random_numbers, filter_cache, sde_mod, ind_data, Val(filter_opt.is_correlated))
-bTime =  @elapsed log_lik = run_filter(filter_opt, mod_param, random_numbers, filter_cache, sde_mod, ind_data)
-=#
+# stand_step=false -> use same propagator as particle filter 
+t_vec, u_vec = solve_sde_em(sde_mod, (0.0, 10.0), [0.0], mod_param, dt; stand_step=true)
+plot(t_vec, u_vec[1, :], label = "Model simulation")
+plot!(data_obs[!, :time], data_obs[!, :obs], seriestype=:scatter, label="Observed data")
