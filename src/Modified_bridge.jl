@@ -6,7 +6,7 @@ Calculate log-determinant for a semite positive definite matrix X of dimension d
 @inline function calc_log_det(X::T1, dim_X::T2) where {T1<:MArray{<:Tuple, Float64, 2}, T2<:Signed}
     log_det::Float64 = 0.0
     @inbounds @simd for i in 1:dim_X
-        log_det += log(X[i, i])
+        @views log_det += log(X[i, i])
     end
     log_det *= 2
     return log_det
@@ -65,7 +65,8 @@ function modified_diffusion_propegate!(filter_cache::ModifiedBridgeFilterCache,
     sde_mod.calc_beta(filter_cache.beta, filter_cache.x, p, t)
 
     # Compute mean and covariance matrix for bridge 
-    inv_term = filter_cache.beta*filter_cache.P*inv(filter_cache.P_T*filter_cache.beta*filter_cache.P*Δk + filter_cache.Σ)
+    tmp = filter_cache.beta*filter_cache.P
+    inv_term = tmp*inv(filter_cache.P_T*tmp*Δk + filter_cache.Σ)
     filter_cache.μ .= filter_cache.alpha .+ inv_term * (filter_cache.y_obs - filter_cache.P_T * (filter_cache.x + filter_cache.alpha * Δk))
     filter_cache.Ω .= filter_cache.beta .- inv_term*filter_cache.P_T*filter_cache.beta*Δt                        
 
@@ -109,7 +110,7 @@ function propegate_modified_diffusion!(filter_cache::ModifiedBridgeFilterCache,
                                        u::Matrix{Float64}) 
     
     p::DynModInput = mod_param.individual_parameters
-    filter_cache.Σ[diagind(filter_cache.Σ)] .= mod_param.error_parameters.^2
+    filter_cache.Σ[diagind(filter_cache.Σ)] .= exp2.(mod_param.error_parameters)
     
     # Time-stepping options 
     Δt::Float64 = (t_step_info.t_end - t_step_info.t_start) / t_step_info.n_step
@@ -123,9 +124,9 @@ function propegate_modified_diffusion!(filter_cache::ModifiedBridgeFilterCache,
     # Update each particle (note x is overwritten)
     @inbounds for i in 1:n_particles
         i_acc = 1:sde_mod.dim
-        @views filter_cache.x .= filter_cache.particles[:, i]
+        @views copyto!(filter_cache.x, filter_cache.particles[:, i])
         for j in 1:t_step_info.n_step     
-            @views filter_cache.u .= u[i_acc, i] 
+            @views copyto!(filter_cache.u , u[i_acc, i])
             t = t_vec[j]
             Δk = t_end - t
             # Propegate and update probability vectors 
@@ -216,20 +217,23 @@ function run_filter(filt_opt::ModifedDiffusionBridgeFilter,
     for i_t_vec in 2:1:len_t_vec    
 
         # If correlated, sort x_curr
-        if is_correlated            
-            data_sort = sum(filter_cache.particles.^2, dims=1)[1, :]
-            sortperm!(filter_cache.index_sort, data_sort)
-            filter_cache.particles .= filter_cache.particles[:, filter_cache.index_sort]
+        if is_correlated  
+            @. filter_cache.particles_sq = exp2(filter_cache.particles)
+            sum!(filter_cache.sum_sq_particles, filter_cache.particles_sq)
+            sortperm!(filter_cache.index_sort, (@view filter_cache.sum_sq_particles[1, :]))
             permute!(filter_cache.w_normalised, filter_cache.index_sort)
+            Base.permutecols!!(filter_cache.particles, filter_cache.index_sort)
         end
 
         _u_resample = u_resample[i_t_vec-1]
         systematic_resampling!(filter_cache.index_resample, filter_cache.w_normalised, n_particles, _u_resample)
-        filter_cache.particles .= filter_cache.particles[:, filter_cache.index_resample]
+        # Store resampled particles in memory efficient manner temporarly in particles_sq struct 
+        filter_cache.particles_sq .= @view filter_cache.particles[:, filter_cache.index_resample]
+        copyto!(filter_cache.particles, filter_cache.particles_sq)
 
         # Variables for propeating correct particles  
         t_step_info = TimeStepInfo(t_vec[i_t_vec-1], t_vec[i_t_vec], n_step_vec[i_u_prop])                        
-        @views filter_cache.y_obs .= y_mat[:, i_t_vec]
+        @views copyto!(filter_cache.y_obs, y_mat[:, i_t_vec])
         try 
             propegate_modified_diffusion!(filter_cache,
                                           model_parameters,
@@ -269,6 +273,6 @@ function calc_weights_modifed_bridge!(i_t_vec::Int64,
     end
 
     sum_w_unormalised::Float64 = sum(filter_cache.w_unormalised)
-    filter_cache.w_normalised .= filter_cache.w_unormalised ./ sum_w_unormalised
+    @. filter_cache.w_normalised = filter_cache.w_unormalised / sum_w_unormalised
     return sum_w_unormalised
 end

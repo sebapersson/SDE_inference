@@ -131,6 +131,8 @@ struct BootstrapFilterEMCache{T1 <: MVector,
     particles::Matrix{T3} # Current value for particles (dim_x × n_particles)
     index_resample::Vector{UInt32}
     index_sort::Vector{UInt32}
+    particles_sq::Matrix{T3}
+    sum_sq_particles::Matrix{T3}
 end
 
 
@@ -162,6 +164,8 @@ struct ModifiedBridgeFilterCache{T1<:MVector,
     logpdf_EM::Vector{T7}
     index_resample::Vector{UInt32}
     index_sort::Vector{UInt32}
+    particles_sq::Matrix{T7}
+    sum_sq_particles::Matrix{T7}
 end
 
 

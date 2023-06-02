@@ -183,7 +183,7 @@ function map_to_zero!(x_data, n_elements::Int64)
 
     @inbounds @simd for i in 1:n_elements
         if x_data[i] < 0 
-            x_data[i] = 0.1
+            x_data[i] = 0.0
         end
     end
 end

@@ -638,10 +638,12 @@ function create_cache(filter::BootstrapFilterEM, ::Val{dim_obs}, ::Val{dim_sde},
     w_unormalised::Vector{Float64} = Vector{Float64}(undef, filter.n_particles)
     w_normalised::Vector{Float64} = Vector{Float64}(undef, filter.n_particles)
     particles::Matrix{Float64} = Matrix{Float64}(undef, dim_sde, filter.n_particles)
+    particles_sq::Matrix{Float64} = Matrix{Float64}(undef, dim_sde, filter.n_particles)
+    sum_sq_particles::Matrix{Float64} = Matrix{Float64}(undef, 1, filter.n_particles)
     index_resample::Vector{UInt32} = Vector{UInt32}(undef, filter.n_particles)
     index_sort::Vector{UInt32} = filter.is_correlated ? Vector{UInt32}(undef, filter.n_particles) : Vector{UInt32}(undef, 0)
 
-    return BootstrapFilterEMCache(beta, alpha, x, u,  y_model, w_unormalised, w_normalised, particles, index_resample, index_sort)
+    return BootstrapFilterEMCache(beta, alpha, x, u,  y_model, w_unormalised, w_normalised, particles, index_resample, index_sort, particles_sq, sum_sq_particles)
 end
 function create_cache(filter::ModifedDiffusionBridgeFilter, ::Val{dim_obs}, ::Val{dim_sde}, ::Val{dim_p}, P_mat) where {dim_obs, dim_sde, dim_p}
     
@@ -667,6 +669,8 @@ function create_cache(filter::ModifedDiffusionBridgeFilter, ::Val{dim_obs}, ::Va
     logpdf_EM::Vector{Float64} = Vector{Float64}(undef, filter.n_particles)
     index_resample::Vector{UInt32} = Vector{UInt32}(undef, filter.n_particles)
     index_sort::Vector{UInt32} = filter.is_correlated ? Vector{UInt32}(undef, filter.n_particles) : Vector{UInt32}(undef, 0)
+    particles_sq::Matrix{Float64} = Matrix{Float64}(undef, dim_sde, filter.n_particles)
+    sum_sq_particles::Matrix{Float64} = Matrix{Float64}(undef, 1, filter.n_particles)
 
-    return ModifiedBridgeFilterCache(μ, alpha, Ω, beta, Σ, P, P_T, x, y_obs, u, μ_EM_pdf, μ_bridge_pdf, y_model, w_unormalised, w_normalised, particles, logpdf_bridge, logpdf_EM, index_resample, index_sort)
+    return ModifiedBridgeFilterCache(μ, alpha, Ω, beta, Σ, P, P_T, x, y_obs, u, μ_EM_pdf, μ_bridge_pdf, y_model, w_unormalised, w_normalised, particles, logpdf_bridge, logpdf_EM, index_resample, index_sort, particles_sq, sum_sq_particles)
 end

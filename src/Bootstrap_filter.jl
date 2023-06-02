@@ -4,7 +4,7 @@
 Calculate squared L2-norm of a vector x
 """
 function calc_norm_squared(x)
-    return sum(x.^2)
+    return sum(exp2.(x))
 end
 
 
@@ -66,11 +66,11 @@ function propegate_em_bootstrap!(filter_cache::BootstrapFilterEMCache,
     # Update each particle (note x is overwritten)
     @inbounds for i in 1:n_particles
         i_acc = 1:sde_mod.dim
-        @views filter_cache.x .= filter_cache.particles[:, i]
+        @views copyto!(filter_cache.x, filter_cache.particles[:, i])
         
         @inbounds for j in 1:t_step_info.n_step
             
-            @views filter_cache.u .= u[i_acc, i] 
+            @views copyto!(filter_cache.u,  u[i_acc, i])
             step_em_bootstrap!(filter_cache, p, sde_mod, Δt, sqrt_Δt, t_vec[j])
 
             map_to_zero!(filter_cache.x, sde_mod.dim)
@@ -139,9 +139,8 @@ function run_filter(filt_opt::BootstrapFilterEM,
     # Special case where t = 0 is not observed 
     if t_vec[1] > 0.0
         t_step_info = TimeStepInfo(0.0, t_vec[1], n_step_vec[i_u_prop])
-        propegate_em_bootstrap!(filter_cache, c, t_step_info, sde_mod, n_particles, random_numbers.u_prop[i_u_prop])
         try 
-            #propegate_em_bootstrap!(filter_cache, c, t_step_info, sde_mod, n_particles, random_numbers.u_prop[i_u_prop])
+            propegate_em_bootstrap!(filter_cache, c, t_step_info, sde_mod, n_particles, random_numbers.u_prop[i_u_prop])
         catch 
             return -Inf 
         end
@@ -153,19 +152,22 @@ function run_filter(filt_opt::BootstrapFilterEM,
     log_lik += log(sum_w_unormalised * n_particles_inv)
 
     # Propegate over remaning time-steps 
-    for i_t_vec in 2:1:len_t_vec    
+    for i_t_vec in 2:1:len_t_vec
         
         # If correlated, sort x_curr
-        if is_correlated            
-            data_sort = sum(filter_cache.particles.^2, dims=1)[1, :]
-            sortperm!(filter_cache.index_sort, data_sort)
-            filter_cache.particles .= filter_cache.particles[:, filter_cache.index_sort]
+        if is_correlated  
+            @. filter_cache.particles_sq = exp2(filter_cache.particles)
+            sum!(filter_cache.sum_sq_particles, filter_cache.particles_sq)
+            sortperm!(filter_cache.index_sort, (@view filter_cache.sum_sq_particles[1, :]))
             permute!(filter_cache.w_normalised, filter_cache.index_sort)
+            Base.permutecols!!(filter_cache.particles, filter_cache.index_sort)
         end
 
         _u_resample = u_resample[i_t_vec-1]
         systematic_resampling!(filter_cache.index_resample, filter_cache.w_normalised, n_particles, _u_resample)
-        filter_cache.particles .= filter_cache.particles[:, filter_cache.index_resample]
+        # Store resampled particles in memory efficient manner temporarly in particles_sq struct 
+        filter_cache.particles_sq .= @view filter_cache.particles[:, filter_cache.index_resample]
+        copyto!(filter_cache.particles, filter_cache.particles_sq)
         
         # Variables for propeating correct particles  
         t_step_info = TimeStepInfo(t_vec[i_t_vec-1], t_vec[i_t_vec], n_step_vec[i_u_prop])   
@@ -201,7 +203,7 @@ function calc_weights_bootstrap!(i_t_vec::Int64,
         filter_cache.w_unormalised[i] = sde_mod.calc_prob_obs(y_obs_sub, filter_cache.y_model, error_param, t, sde_mod.dim_obs)
     end
     sum_w_unormalised = sum(filter_cache.w_unormalised)
-    filter_cache.w_normalised .= filter_cache.w_unormalised ./ sum_w_unormalised
+    @. filter_cache.w_normalised = filter_cache.w_unormalised / sum_w_unormalised
 
     return sum_w_unormalised
 end
